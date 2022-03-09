@@ -1,0 +1,362 @@
+
+#1
+CREATE EXTENSION citus;
+
+CREATE TABLE json_table (
+    id VARCHAR(50) PRIMARY KEY,
+    type VARCHAR(50),
+    name VARCHAR(50),
+    ppu DECIMAL,
+    batters JSONB,
+    topping JSONB
+);
+
+INSERT INTO json_table
+SELECT * FROM json_populate_recordset (NULL::json_table,
+  '[
+    {
+        "id": "0001",
+        "type": "donut",
+        "name": "Cake",
+        "ppu": 0.55,
+        "batters":
+            {
+                "batter":
+                    [
+                        { "id": "1001", "type": "Regular" },
+                        { "id": "1002", "type": "Chocolate" },
+                        { "id": "1003", "type": "Blueberry" },
+                        { "id": "1004", "type": "Devil''s Food" }
+                    ]
+            },
+        "topping":
+            [
+                { "id": "5001", "type": "None" },
+                { "id": "5002", "type": "Glazed" },
+                { "id": "5005", "type": "Sugar" },
+                { "id": "5007", "type": "Powdered Sugar" },
+                { "id": "5006", "type": "Chocolate with Sprinkles" },
+                { "id": "5003", "type": "Chocolate" },
+                { "id": "5004", "type": "Maple" }
+            ]
+    },
+    {
+        "id": "0002",
+        "type": "donut",
+        "name": "Raised",
+        "ppu": 0.55,
+        "batters":
+            {
+                "batter":
+                    [
+                        { "id": "1001", "type": "Regular" }
+                    ]
+            },
+        "topping":
+            [
+                { "id": "5001", "type": "None" },
+                { "id": "5002", "type": "Glazed" },
+                { "id": "5005", "type": "Sugar" },
+                { "id": "5003", "type": "Chocolate" },
+                { "id": "5004", "type": "Maple" }
+            ]
+    },
+    {
+        "id": "0003",
+        "type": "donut",
+        "name": "Old Fashioned",
+        "ppu": 0.55,
+        "batters":
+            {
+                "batter":
+                    [
+                        { "id": "1001", "type": "Regular" },
+                        { "id": "1002", "type": "Chocolate" }
+                    ]
+            },
+        "topping":
+            [
+                { "id": "5001", "type": "None" },
+                { "id": "5002", "type": "Glazed" },
+                { "id": "5003", "type": "Chocolate" },
+                { "id": "5004", "type": "Maple" }
+            ]
+    }
+]');
+
+CREATE TABLE product (
+    id VARCHAR(50),
+    type VARCHAR(50),
+    name VARCHAR(50),
+    ppu DECIMAL,
+    batter_id VARCHAR(50),
+    batter_type VARCHAR(100),
+    topping_id VARCHAR(50),
+    topping_type VARCHAR(100)
+)
+USING columnar;
+
+INSERT INTO product 
+	SELECT jt.id,jt.type,jt.name,jt.ppu
+		,j.batter::jsonb -> 'id' as batter_id
+        	,j.batter::jsonb -> 'type' as batter_type
+        	,k.topping::jsonb -> 'id' as topping_id
+        	,k.topping::jsonb -> 'type' as topping_type
+FROM json_table jt
+	CROSS JOIN LATERAL
+      	jsonb_array_elements_text(
+        batters->'batter'
+     ) AS j(batter)
+	CROSS JOIN LATERAL
+      	jsonb_array_elements_text(
+        topping
+     ) AS k(topping)
+
+#2
+
+import airflow 
+from datetime import timedelta 
+from airflow import DAG 
+from airflow.operators.postgres_operator import PostgresOperator 
+from airflow.utils.dates import days_ago
+
+dag_psql = DAG( 
+dag_id = "jsontocolumnar", 
+default_args=args, 
+schedule_interval='@once', 
+dagrun_timeout=timedelta(minutes=60), 
+start_date = airflow.utils.dates.days_ago(1) 
+)
+
+create_json_table_sql_query = """ 
+CREATE TABLE json_table (
+    id VARCHAR(50) PRIMARY KEY,
+    type VARCHAR(50),
+    name VARCHAR(50),
+    ppu DECIMAL,
+    batters JSONB,
+    topping JSONB
+);
+""" 
+
+insert_data_json_sql_query = """ 
+INSERT INTO json_table
+SELECT * FROM json_populate_recordset (NULL::json_table,
+  '[
+    {
+        "id": "0001",
+        "type": "donut",
+        "name": "Cake",
+        "ppu": 0.55,
+        "batters":
+            {
+                "batter":
+                    [
+                        { "id": "1001", "type": "Regular" },
+                        { "id": "1002", "type": "Chocolate" },
+                        { "id": "1003", "type": "Blueberry" },
+                        { "id": "1004", "type": "Devil''s Food" }
+                    ]
+            },
+        "topping":
+            [
+                { "id": "5001", "type": "None" },
+                { "id": "5002", "type": "Glazed" },
+                { "id": "5005", "type": "Sugar" },
+                { "id": "5007", "type": "Powdered Sugar" },
+                { "id": "5006", "type": "Chocolate with Sprinkles" },
+                { "id": "5003", "type": "Chocolate" },
+                { "id": "5004", "type": "Maple" }
+            ]
+    },
+    {
+        "id": "0002",
+        "type": "donut",
+        "name": "Raised",
+        "ppu": 0.55,
+        "batters":
+            {
+                "batter":
+                    [
+                        { "id": "1001", "type": "Regular" }
+                    ]
+            },
+        "topping":
+            [
+                { "id": "5001", "type": "None" },
+                { "id": "5002", "type": "Glazed" },
+                { "id": "5005", "type": "Sugar" },
+                { "id": "5003", "type": "Chocolate" },
+                { "id": "5004", "type": "Maple" }
+            ]
+    },
+    {
+        "id": "0003",
+        "type": "donut",
+        "name": "Old Fashioned",
+        "ppu": 0.55,
+        "batters":
+            {
+                "batter":
+                    [
+                        { "id": "1001", "type": "Regular" },
+                        { "id": "1002", "type": "Chocolate" }
+                    ]
+            },
+        "topping":
+            [
+                { "id": "5001", "type": "None" },
+                { "id": "5002", "type": "Glazed" },
+                { "id": "5003", "type": "Chocolate" },
+                { "id": "5004", "type": "Maple" }
+            ]
+    }
+]');
+"""
+
+create_columnar_table_sql_query = """ 
+CREATE TABLE product (
+  	id VARCHAR(50),
+    type VARCHAR(50),
+    name VARCHAR(50),
+    ppu DECIMAL,
+    batter_id VARCHAR(50),
+    batter_type VARCHAR(100),
+  	topping_id VARCHAR(50),
+  	topping_type VARCHAR(100)
+)
+USING columnar;
+""" 
+
+insert_data_columnar_sql_query = """ 
+INSERT INTO product 
+	SELECT jt.id,jt.type,jt.name,jt.ppu
+		,j.batter::jsonb -> 'id' as batter_id
+        ,j.batter::jsonb -> 'type' as batter_type
+        ,k.topping::jsonb -> 'id' as topping_id
+        ,k.topping::jsonb -> 'type' as topping_type
+FROM json_table jt
+	CROSS JOIN LATERAL
+      	jsonb_array_elements_text(
+        batters->'batter'
+     ) AS j(batter)
+	CROSS JOIN LATERAL
+      	jsonb_array_elements_text(
+        topping
+     ) AS k(topping)
+""" 
+
+create_json_table = PostgresOperator( 
+sql = create_json_table_sql_query, 
+task_id = "create_json_table", 
+postgres_conn_id = "postgres_local", 
+dag = dag_psql ) 
+
+insert_data_json_table = PostgresOperator( 
+sql = insert_data_json_sql_query, 
+task_id = "insert_data_json_table", 
+postgres_conn_id = "postgres_local", 
+dag = dag_psql )
+
+create_columnar_table = PostgresOperator( 
+sql = create_columnar_table_sql_query, 
+task_id = "create_columnar_table", 
+postgres_conn_id = "postgres_local", 
+dag = dag_psql ) 
+
+insert_data_columnar_table = PostgresOperator( 
+sql = insert_data_columnar_sql_query, 
+task_id = "insert_data_columnar_table", 
+postgres_conn_id = "postgres_local", 
+dag = dag_psql )
+
+
+create_json_table >> insert_data_json_table >> create_columnar_table >> insert_data_columnar_table
+
+#3
+
+import request
+user = 'your_email','your_password'
+url = 'https://your_zendesk_url/api/v2/groups.json'
+
+response = requests.get(url, auth=user)
+if response.status_code != 200:
+    print('Status:', response.status_code, '.Error')
+    exit()
+data = response.json()
+
+group_list = data['groups']
+for group in group_list:
+    print(group['name'])
+
+Example Table:
+ 
+| name	        | id	        |
+| ------------- | ------------- |
+| Kita	        | 100	        |
+| Bisa	        | 101	        |
+
+
+#4.1
+	
+
+	#Input jumlah N
+	j = int(input('N: '))
+	count = 0
+	a = 1
+	
+
+	#define prime number
+	def is_prime_number (x):
+	  for i in range(2, x):
+	    if x % i == 0:
+	      return False
+	  return True
+	
+
+	prime_number_list = []
+	while count < j:
+	    a = a + 1
+	    if is_prime_number(a):
+	     prime_number_list.append(a)
+	     count = count + 1
+	
+
+	   
+	print(prime_number_list)
+	
+
+#4.2	
+	
+
+	# Input Kedua List
+	j1 = input('list_1: ')
+	k1 = input('list_2: ')
+	
+
+	#Sort Kedua List
+	j2 = sorted(j1.split(","))
+	k2 = sorted(k1.split(","))
+	
+
+	#Cek hitung jumlah List
+	count_j = len(j2)
+	count_k = len(k2)
+	
+
+	#Add null ke list yg jumlahnya lebih sedikit
+	while count_j < count_k:
+	    j2.append("NULL")
+	    count_j = count_j+1
+	
+
+	while count_k < count_j:
+	    k2.append("NULL")
+	    count_k = count_k+1
+	
+
+	#Zip 2 list
+	new_lst = [list(x) for x in zip(j2, k2)]
+	print(new_lst)
+	
+
